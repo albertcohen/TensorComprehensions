@@ -71,42 +71,6 @@ std::string find_library_path(std::string library) {
 
 namespace tc {
 
-#if LLVM_VERSION_MAJOR <= 6
-
-Jit::Jit()
-    : TM_(EngineBuilder().selectTarget()),
-      DL_(TM_->createDataLayout()),
-      objectLayer_([]() { return std::make_shared<SectionMemoryManager>(); }),
-      compileLayer_(objectLayer_, orc::SimpleCompiler(*TM_)) {
-  std::string err;
-
-  auto path = find_library_path("libcilkrts.so");
-  sys::DynamicLibrary::LoadLibraryPermanently(path.c_str(), &err);
-  if (err != "") {
-    throw std::runtime_error("Failed to find cilkrts: " + err);
-  }
-}
-
-void Jit::addModule(std::shared_ptr<Module> M) {
-  M->setTargetTriple(TM_->getTargetTriple().str());
-  auto Resolver = orc::createLambdaResolver(
-      [&](const std::string& Name) {
-        if (auto Sym = compileLayer_.findSymbol(Name, false))
-          return Sym;
-        return JITSymbol(nullptr);
-      },
-      [](const std::string& Name) {
-        if (auto SymAddr = RTDyldMemoryManager::getSymbolAddressInProcess(Name))
-          return JITSymbol(SymAddr, JITSymbolFlags::Exported);
-        return JITSymbol(nullptr);
-      });
-
-  auto res = compileLayer_.addModule(M, std::move(Resolver));
-  TC_CHECK(res) << "Failed to jit compile.";
-}
-
-#else
-
 Jit::Jit()
     : ES(),
       Resolver(llvm::orc::createLegacyLookupResolver(
@@ -145,7 +109,6 @@ void Jit::addModule(std::shared_ptr<Module> M) {
   llvm::Error res = compileLayer_.addModule(K, CloneModule(*M));
   TC_CHECK(!res) << "Failed to jit compile.";
 }
-#endif
 
 std::shared_ptr<Module> Jit::codegenScop(
     const std::string& specializedName,
