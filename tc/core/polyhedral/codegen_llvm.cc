@@ -384,7 +384,8 @@ class LLVMCodegen {
   }
 
   void CodeGen(isl::ast_node node) {
-    emitAst(node);
+    auto* insertionPoint = halide_cg.get_builder().GetInsertBlock();
+    emitAst(node, insertionPoint);
     halide_cg.get_builder().CreateRetVoid();
 
     if (llvm::verifyModule(*halide_cg.get_module())) {
@@ -394,7 +395,8 @@ class LLVMCodegen {
     }
   }
 
-  llvm::BasicBlock* emitAst(isl::ast_node node) {
+  llvm::BasicBlock* emitAst(
+      isl::ast_node node, llvm::BasicBlock* insertionPoint) {
     if (auto forNode = node.as<isl::ast_node_for>()) {
       return emitFor(forNode);
     } else if (auto userNode = node.as<isl::ast_node_user>()) {
@@ -402,7 +404,7 @@ class LLVMCodegen {
     } else if (auto blockNode = node.as<isl::ast_node_block>()) {
       llvm::BasicBlock* curBB;
       for (auto child : blockNode.get_children()) {
-        curBB = emitAst(child);
+        curBB = emitAst(child, insertionPoint);
       }
       return curBB;
     } else {
@@ -435,8 +437,7 @@ class LLVMCodegen {
     llvm::Value* condVal = halide_cg.codegen(node.get_cond());
     auto* thenBB = llvm::BasicBlock::Create(llvmCtx, "then", function);
     // Recursively emit "then" in a new thenBB
-    halide_cg.get_builder().SetInsertPoint(thenBB);
-    auto innerBB = emitAst(node.get_then());
+    auto innerBB = emitAst(node.get_then(), thenBB);
 
     // outer -> thenBB
     halide_cg.get_builder().SetInsertPoint(incoming);
@@ -489,8 +490,7 @@ class LLVMCodegen {
 
     // Create Body
     {
-      halide_cg.get_builder().SetInsertPoint(loopBodyBB);
-      auto* currentBB = emitAst(node.get_body());
+      auto* currentBB = emitAst(node.get_body(), loopBodyBB);
       halide_cg.get_builder().SetInsertPoint(currentBB);
       halide_cg.get_builder().CreateBr(loopLatchBB);
     }
