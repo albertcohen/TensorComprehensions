@@ -105,6 +105,9 @@ Jit::Jit()
 
 void Jit::addModule(std::shared_ptr<Module> M) {
   M->setTargetTriple(TM_->getTargetTriple().str());
+
+  LOG(INFO) << "*** Dump target triple\n" << TM_->getTargetTriple().str();
+
   auto K = ES.allocateVModule();
   llvm::Error res = compileLayer_.addModule(K, CloneModule(*M));
   TC_CHECK(!res) << "Failed to jit compile.";
