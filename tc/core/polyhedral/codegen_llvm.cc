@@ -24,6 +24,7 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/TargetSelect.h"
@@ -617,6 +618,27 @@ IslCodegenRes codegenISL(const Scop& scop) {
 }
 
 } // namespace
+  
+// Safely unbox string metadata
+bool get_md_string(llvm::Metadata *value, std::string &result) {
+  if (!value) {
+    result = "";
+    return false;
+  }
+  llvm::MDString *c = llvm::dyn_cast<llvm::MDString>(value);
+  if (c) {
+    result = c->getString();
+    return true;
+  }
+  return false;
+}
+
+// Log target CPU
+void log_module_flag_target_cpu(LLVMCodegen& cg) {
+  std::string mcpu;
+  get_md_string(cg.halide_cg.get_module()->getModuleFlag("halide_mcpu"), mcpu);
+  LOG(INFO) << "*** Target CPU: " << mcpu << "\n";
+}
 
 std::unique_ptr<llvm::Module> emitLLVMKernel(
     const std::string& specializedName,
@@ -627,6 +649,13 @@ std::unique_ptr<llvm::Module> emitLLVMKernel(
   cg.halide_cg.get_module()->setDataLayout(dataLayout);
   cg.halide_cg.get_module()->setTargetTriple(
       llvm::EngineBuilder().selectTarget()->getTargetTriple().str());
+
+  auto mdb = llvm::MDBuilder(llvmCtx);
+  cg.halide_cg.get_module()->addModuleFlag(llvm::Module::ModFlagBehavior::Override, "halide_mcpu", mdb.createString("skylake"));
+
+  // Log target CPU registered in the cg module
+  log_module_flag_target_cpu(cg);
+  
   auto entry = cg.createSignature(
       scop.halide.inputs,
       scop.halide.outputs,
